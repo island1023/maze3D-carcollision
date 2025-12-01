@@ -34,6 +34,7 @@ public struct Scent : System.IDisposable
 
     public NativeArray<float> Disperse(Maze maze, Vector3 playerPosition)
     {
+        bool jobScheduled = false;
         cooldown -= Time.deltaTime;
         if (cooldown <= 0f)
         {
@@ -46,13 +47,22 @@ public struct Scent : System.IDisposable
             }.ScheduleParallel(maze.Length, maze.size.x, default).Complete();
 
             useA = !useA;
+            jobScheduled = true;
         }
 
         // 获取当前正在使用的气味数组
         NativeArray<float> current = useA ? scentA : scentB;
 
         // 将玩家当前位置的气味设置为最大值 (1f)
-        current[maze.WorldPositionToIndex(playerPosition)] = 1f;
+        int playerIndex = maze.WorldPositionToIndex(playerPosition);
+        current[playerIndex] = 1f;
+
+        // --- 调试检测点 B: 确认 Job 运行和气味设置 ---
+        if (jobScheduled)
+        {
+            Debug.Log($"[Scent Debug] Job Run. Player Scent set at index: {playerIndex} ({maze.IndexToCoordinates(playerIndex)})");
+        }
+        // ------------------------------------------------
 
         return current;
     }

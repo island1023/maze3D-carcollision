@@ -23,27 +23,28 @@ public struct DisperseScentJob : IJobFor
         float fromNeighbors = 0f;
         float dispersalFactor = 0f; // 开放通道的数量
 
-        // 收集邻居气味 (仅检查直角通道)
+        // 收集邻居气味 (仅检查直角通道，使用位运算)
+
         // E (Right/x+1)
-        if ((cell & MazeFlags.PassageE) != 0) // <-- 修改此处
+        if ((cell & MazeFlags.PassageE) != 0)
         {
             fromNeighbors += oldScent[i + maze.StepE];
             dispersalFactor += 1f;
         }
         // W (Left/x-1)
-        if ((cell & MazeFlags.PassageW) != 0) // <-- 修改此处
+        if ((cell & MazeFlags.PassageW) != 0)
         {
             fromNeighbors += oldScent[i + maze.StepW];
             dispersalFactor += 1f;
         }
         // N (Forward/z+1)
-        if ((cell & MazeFlags.PassageN) != 0) // <-- 修改此处
+        if ((cell & MazeFlags.PassageN) != 0)
         {
             fromNeighbors += oldScent[i + maze.StepN];
             dispersalFactor += 1f;
         }
         // S (Backward/z-1)
-        if ((cell & MazeFlags.PassageS) != 0) // <-- 修改此处
+        if ((cell & MazeFlags.PassageS) != 0)
         {
             fromNeighbors += oldScent[i + maze.StepS];
             dispersalFactor += 1f;

@@ -35,12 +35,11 @@ public class Agent : MonoBehaviour
         MeshRenderer meshRenderer = GetComponent<MeshRenderer>();
         if (meshRenderer != null)
         {
-            // 假设使用带有颜色属性的无光材质
             meshRenderer.material.color = color;
         }
 
         // 修正 2: 移除默认禁用，让怪物由场景或预制件的启用状态控制。
-        // gameObject.SetActive(false); // <-- 移除此行
+        // gameObject.SetActive(false); 
     }
 
     // ----------------------------------------
@@ -128,30 +127,28 @@ public class Agent : MonoBehaviour
         // trail 存储 (索引, 气味强度)
         (int, float) trail = (0, 0f);
 
-        // 仅检查直角通道（与 MazeGenerator3D.cs 的生成逻辑一致）
+        // 仅检查直角通道（使用位运算 & 检查通道）
 
         // E (Right)
-        if ((cell & MazeFlags.PassageE) != 0) // <-- 修改此处
+        if ((cell & MazeFlags.PassageE) != 0)
         {
             Sniff(ref trail, scent, maze.StepE);
         }
         // W (Left)
-        if ((cell & MazeFlags.PassageW) != 0) // <-- 修改此处
+        if ((cell & MazeFlags.PassageW) != 0)
         {
             Sniff(ref trail, scent, maze.StepW);
         }
         // N (Forward)
-        if ((cell & MazeFlags.PassageN) != 0) // <-- 修改此处
+        if ((cell & MazeFlags.PassageN) != 0)
         {
             Sniff(ref trail, scent, maze.StepN);
         }
         // S (Backward)
-        if ((cell & MazeFlags.PassageS) != 0) // <-- 修改此处
+        if ((cell & MazeFlags.PassageS) != 0)
         {
             Sniff(ref trail, scent, maze.StepS);
         }
-
-        // 注意：此处移除了对角线检查 (PassageNE, NW, SE, SW)，以适配您的迷宫结构。
 
         if (trail.Item2 > 0f)
         {
@@ -159,8 +156,20 @@ public class Agent : MonoBehaviour
             targetIndex = trail.Item1;
             // 设置新的目标位置，保持 Y 轴不变
             targetPosition = maze.IndexToWorldPosition(trail.Item1, transform.localPosition.y);
+            // --- 调试检测点 C1: 确认找到目标 ---
+            Debug.Log($"[Agent Debug] {gameObject.name} found new target at index: {targetIndex} (Scent: {trail.Item2:F3})");
+            // ---------------------------------------
             return true;
         }
+
+        // --- 调试检测点 C2: 确认停止 ---
+        if (isMoving)
+        {
+            // 如果怪物被选中移动 (isMoving=true) 但找不到目标，说明它停下来了。
+            Debug.LogWarning($"[Agent Debug] {gameObject.name} failed to find target from index {targetIndex}. Scent too weak (Max Scent Detected: {trail.Item2:F3}) or blocked.");
+        }
+        // ----------------------------------
+
         return false;
     }
 }

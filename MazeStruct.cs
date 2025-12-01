@@ -49,10 +49,6 @@ public struct Maze : System.IDisposable
 
     public MazeFlags this[int i] => cellFlags[i];
 
-    // 检查通道是否打开
-    public bool Has(MazeFlags flag) => (cellFlags[0] & flag) != 0;
-
-
     // 坐标转索引 (XZ 平面)
     public int CoordinatesToIndex(int2 coordinates) =>
         coordinates.y * size.x + coordinates.x;

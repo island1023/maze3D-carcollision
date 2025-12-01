@@ -54,12 +54,11 @@ public class MazeGenerator3D : MonoBehaviour
     private Stack<Cell> stack = new Stack<Cell>();
 
 
-    // --- 新增: 迷宫数据结构 (用于 AI 寻路) ---
+    // --- AI 寻路数据结构 ---
     private Maze mazeData;
     public Maze MazeData => mazeData;
     private NativeArray<MazeFlags> mazeFlagsNativeArray;
     private bool isMazeDataCreated = false;
-
 
 
     // 将 3D 坐标 (x, y, z) 转换为 2D 气味系统的索引 (x, z)
@@ -93,17 +92,13 @@ public class MazeGenerator3D : MonoBehaviour
         StartCoroutine(GenerateMazeDFS());
     }
 
-    // 新增：清理 NativeArray
+    // 新增：清理 NativeArray (解决二次释放问题)
     void OnDestroy()
     {
-        // 修正 1: 确保只释放由 MazeGenerator3D 创建并拥有生命周期的 NativeArray。
         if (mazeFlagsNativeArray.IsCreated)
         {
             mazeFlagsNativeArray.Dispose();
         }
-        // 由于 mazeData 共享 mazeFlagsNativeArray 的引用，
-        // 如果调用 mazeData.Dispose()，会导致 NativeArray 被二次释放，因此将其注释掉。
-        // mazeData.Dispose(); 
     }
 
 
@@ -190,7 +185,7 @@ public class MazeGenerator3D : MonoBehaviour
         }
     }
 
-    // 深度优先搜索迷宫生成算法 (保持不变)
+    // 深度优先搜索迷宫生成算法 (更新了 MazeData 初始化)
     IEnumerator GenerateMazeDFS()
     {
         Cell current = mazeCells[0, 0, 0];
@@ -219,7 +214,7 @@ public class MazeGenerator3D : MonoBehaviour
         PlaceStartAndEnd();
         PlaceItems();
 
-        // *** 新增: 创建最终的 MazeData 结构体 ***
+        // *** 创建最终的 MazeData 结构体 ***
         mazeData = new Maze(
             new int2(xSize, zSize),
             WallScale,
@@ -232,7 +227,7 @@ public class MazeGenerator3D : MonoBehaviour
     }
 
 
-    // 放置物品和怪物 (使用各自的高度参数)
+    // 放置物品和怪物
     private void PlaceItems()
     {
         Vector2 startCoord = new Vector2(0, 0);
@@ -263,7 +258,7 @@ public class MazeGenerator3D : MonoBehaviour
             }
         }
 
-        // --- 宝箱放置逻辑 (不变) ---
+        // --- 宝箱放置逻辑 ---
 
         // 1. 确定要放置的宝箱数量 (至少 10 个)
         int densityFactor = MinCellSeparation * 2;
@@ -275,17 +270,15 @@ public class MazeGenerator3D : MonoBehaviour
         List<Cell> chestCells = new List<Cell>();
 
         // 2. 使用基于距离的采样，确保均匀分布
-        // 使用 UnityEngine.Random
-        List<Cell> availableCandidates = new List<Cell>(spawnCandidates.OrderBy(c => UnityEngine.Random.value)); // <-- 修改此处
+        List<Cell> availableCandidates = new List<Cell>(spawnCandidates.OrderBy(c => UnityEngine.Random.value));
 
-        int attempts = 0;
-        int maxAttemptsPerPlacement = 500;
+        int attempts = 0; // <-- 变量定义 1
+        int maxAttemptsPerPlacement = 500; // <-- 变量定义 1
 
         while (chestCells.Count < maxChests && availableCandidates.Count > 0 && attempts < maxAttemptsPerPlacement)
         {
             // 随机选择一个候选单元格
-            // 使用 UnityEngine.Random
-            Cell candidate = availableCandidates[UnityEngine.Random.Range(0, availableCandidates.Count)]; // <-- 修改此处
+            Cell candidate = availableCandidates[UnityEngine.Random.Range(0, availableCandidates.Count)];
             availableCandidates.Remove(candidate);
 
             if (IsFarEnough(candidate, chestCells, MinCellSeparation))
@@ -301,15 +294,14 @@ public class MazeGenerator3D : MonoBehaviour
 
         Debug.Log($"目标宝箱数量: {targetChests}，实际放置数量: {chestCells.Count} (Min Separation: {MinCellSeparation})");
 
-        // 3. 放置所有宝箱对象
+        // 3. 放置所有宝箱对象 (安全偏移逻辑)
         foreach (Cell cell in chestCells)
         {
             Vector3 cellPos = GetCellPosition(cell.x, cell.y, cell.z);
 
             // 随机化宝箱在单元格内的位置 (不超过 WallScale 的 40% 偏移，防止过于靠近墙壁)
-            // 使用 UnityEngine.Random
-            float offsetX = UnityEngine.Random.Range(-WallScale * 0.4f, WallScale * 0.4f); // <-- 修改此处
-            float offsetZ = UnityEngine.Random.Range(-WallScale * 0.4f, WallScale * 0.4f); // <-- 修改此处
+            float offsetX = UnityEngine.Random.Range(-WallScale * 0.4f, WallScale * 0.4f);
+            float offsetZ = UnityEngine.Random.Range(-WallScale * 0.4f, WallScale * 0.4f);
 
             Vector3 chestPos = cellPos + new Vector3(offsetX, chestSpawnY, offsetZ);
             Instantiate(TreasureChestPrefab, chestPos, Quaternion.identity);
@@ -323,20 +315,17 @@ public class MazeGenerator3D : MonoBehaviour
         // 确定需要放置怪物的数量（宝箱总数的 2/3，向下取整）
         int monstersToPlace = Mathf.FloorToInt(chestCells.Count * 2f / 3f); // <--- 使用向下取整
 
-        // 移除强制保证 10 个怪物的硬编码逻辑，遵循计算结果
-
         // 怪物的候选位置：所有未被宝箱占用的单元格
         HashSet<Cell> occupiedByChests = new HashSet<Cell>(chestCells);
-        // 修正 1: 使用 UnityEngine.Random
         List<Cell> monsterCandidates = spawnCandidates.Except(occupiedByChests).OrderBy(c => UnityEngine.Random.value).ToList();
 
+        // 修正 CS0128 错误：移除 'int' 关键字，重新使用已声明的变量
         attempts = 0;
         maxAttemptsPerPlacement = 1000; // 增加尝试次数，以满足严格的间隔要求
 
         while (monsterCells.Count < monstersToPlace && monsterCandidates.Count > 0 && attempts < maxAttemptsPerPlacement)
         {
             // 随机选择一个候选单元格
-            // 修正 2: 使用 UnityEngine.Random
             Cell candidate = monsterCandidates[UnityEngine.Random.Range(0, monsterCandidates.Count)];
             monsterCandidates.Remove(candidate);
 
@@ -359,16 +348,12 @@ public class MazeGenerator3D : MonoBehaviour
         {
             Vector3 cellPos = GetCellPosition(cell.x, cell.y, cell.z);
             // 使用 UnityEngine.Random
-            float offsetX = UnityEngine.Random.Range(-WallScale * 0.4f, WallScale * 0.4f); // <-- 修改此处
-            float offsetZ = UnityEngine.Random.Range(-WallScale * 0.4f, WallScale * 0.4f); // <-- 修改此处
+            float offsetX = UnityEngine.Random.Range(-WallScale * 0.4f, WallScale * 0.4f);
+            float offsetZ = UnityEngine.Random.Range(-WallScale * 0.4f, WallScale * 0.4f);
 
             Vector3 monsterPos = cellPos + new Vector3(offsetX, monsterSpawnY, offsetZ);
             Instantiate(MonsterPrefab, monsterPos, Quaternion.identity);
         }
-
-        // 清理：移除了 FindOpenNeighbourForMonster 和 CheckMonsterSpawnCandidate 的旧逻辑，
-        // 因为怪物现在是独立放置的。
-
     }
 
     // 检查候选单元格是否与所有已放置的宝箱保持最小距离 (用于宝箱放置)
@@ -495,6 +480,8 @@ public class MazeGenerator3D : MonoBehaviour
 
         return wall;
     }
+
+    // 核心：移除墙壁并记录 AI 通道
     private void RemoveWall(Cell current, Cell neighbour)
     {
         int dx = current.x - neighbour.x;
@@ -529,7 +516,12 @@ public class MazeGenerator3D : MonoBehaviour
             mazeFlagsNativeArray[neighbour2DIndex] |= MazeFlags.PassageW;
         }
 
-        // Y轴 (Up/Down) - 忽略 Y 轴的通道，专注于 2D 气味系统
+        // Y轴 (Up/Down)
+        if (dy == 1)
+            Destroy(neighbour.walls[2]);
+        else if (dy == -1)
+            Destroy(current.walls[2]);
+        // Y轴的通道不需要记录到 2D 气味地图中
 
         // Z轴 (Forward/Backward)
         if (dz == 1) // current is Forward of neighbour (current.z > neighbour.z)
@@ -561,7 +553,6 @@ public class MazeGenerator3D : MonoBehaviour
     }
 
 
-
     private Cell GetUnvisitedNeighbour(Cell c)
     {
         List<Cell> neighbours = new List<Cell>();
@@ -576,8 +567,8 @@ public class MazeGenerator3D : MonoBehaviour
 
         if (neighbours.Count > 0)
         {
-            // 使用 UnityEngine.Random
-            return neighbours[UnityEngine.Random.Range(0, neighbours.Count)]; // <-- 修改此处
+            // 明确使用 UnityEngine.Random
+            return neighbours[UnityEngine.Random.Range(0, neighbours.Count)];
         }
         return null;
     }
