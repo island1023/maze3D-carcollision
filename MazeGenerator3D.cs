@@ -2,6 +2,8 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Collections;
 using System.Linq;
+using Unity.Collections;
+using Unity.Mathematics;
 
 public class MazeGenerator3D : MonoBehaviour
 {
@@ -51,6 +53,22 @@ public class MazeGenerator3D : MonoBehaviour
     private Cell[,,] mazeCells;
     private Stack<Cell> stack = new Stack<Cell>();
 
+
+    // --- 新增: 迷宫数据结构 (用于 AI 寻路) ---
+    private Maze mazeData;
+    public Maze MazeData => mazeData;
+    private NativeArray<MazeFlags> mazeFlagsNativeArray;
+    private bool isMazeDataCreated = false;
+
+
+
+    // 将 3D 坐标 (x, y, z) 转换为 2D 气味系统的索引 (x, z)
+    private int CoordinatesTo2DIndex(int x, int z)
+    {
+        // 假设 ySize=1，所以迷宫长度是 xSize * zSize
+        return z * xSize + x;
+    }
+
     void Start()
     {
         // 确保预制件和材质已设置
@@ -66,9 +84,28 @@ public class MazeGenerator3D : MonoBehaviour
         }
 
         mazeCells = new Cell[xSize, ySize, zSize];
+
+        // 初始化 MazeFlags NativeArray (2D 大小: xSize * zSize)
+        int mazeLength2D = xSize * zSize;
+        mazeFlagsNativeArray = new NativeArray<MazeFlags>(mazeLength2D, Allocator.Persistent);
+
         InitializeCells();
         StartCoroutine(GenerateMazeDFS());
     }
+
+    // 新增：清理 NativeArray
+    void OnDestroy()
+    {
+        // 修正 1: 确保只释放由 MazeGenerator3D 创建并拥有生命周期的 NativeArray。
+        if (mazeFlagsNativeArray.IsCreated)
+        {
+            mazeFlagsNativeArray.Dispose();
+        }
+        // 由于 mazeData 共享 mazeFlagsNativeArray 的引用，
+        // 如果调用 mazeData.Dispose()，会导致 NativeArray 被二次释放，因此将其注释掉。
+        // mazeData.Dispose(); 
+    }
+
 
     // 初始化所有单元格及其墙壁 (保持不变)
     private void InitializeCells()
@@ -181,7 +218,17 @@ public class MazeGenerator3D : MonoBehaviour
         // 迷宫生成完毕后，放置起点、终点和物品
         PlaceStartAndEnd();
         PlaceItems();
-        Debug.Log("3D Maze Generation Complete. Items placed.");
+
+        // *** 新增: 创建最终的 MazeData 结构体 ***
+        mazeData = new Maze(
+            new int2(xSize, zSize),
+            WallScale,
+            mazeFlagsNativeArray
+        );
+        isMazeDataCreated = true;
+        // ***************************************
+
+        Debug.Log("3D Maze Generation Complete. Items placed. Maze Data for AI created.");
     }
 
 
@@ -228,7 +275,8 @@ public class MazeGenerator3D : MonoBehaviour
         List<Cell> chestCells = new List<Cell>();
 
         // 2. 使用基于距离的采样，确保均匀分布
-        List<Cell> availableCandidates = new List<Cell>(spawnCandidates.OrderBy(c => Random.value));
+        // 使用 UnityEngine.Random
+        List<Cell> availableCandidates = new List<Cell>(spawnCandidates.OrderBy(c => UnityEngine.Random.value)); // <-- 修改此处
 
         int attempts = 0;
         int maxAttemptsPerPlacement = 500;
@@ -236,7 +284,8 @@ public class MazeGenerator3D : MonoBehaviour
         while (chestCells.Count < maxChests && availableCandidates.Count > 0 && attempts < maxAttemptsPerPlacement)
         {
             // 随机选择一个候选单元格
-            Cell candidate = availableCandidates[Random.Range(0, availableCandidates.Count)];
+            // 使用 UnityEngine.Random
+            Cell candidate = availableCandidates[UnityEngine.Random.Range(0, availableCandidates.Count)]; // <-- 修改此处
             availableCandidates.Remove(candidate);
 
             if (IsFarEnough(candidate, chestCells, MinCellSeparation))
@@ -258,8 +307,9 @@ public class MazeGenerator3D : MonoBehaviour
             Vector3 cellPos = GetCellPosition(cell.x, cell.y, cell.z);
 
             // 随机化宝箱在单元格内的位置 (不超过 WallScale 的 40% 偏移，防止过于靠近墙壁)
-            float offsetX = Random.Range(-WallScale * 0.4f, WallScale * 0.4f);
-            float offsetZ = Random.Range(-WallScale * 0.4f, WallScale * 0.4f);
+            // 使用 UnityEngine.Random
+            float offsetX = UnityEngine.Random.Range(-WallScale * 0.4f, WallScale * 0.4f); // <-- 修改此处
+            float offsetZ = UnityEngine.Random.Range(-WallScale * 0.4f, WallScale * 0.4f); // <-- 修改此处
 
             Vector3 chestPos = cellPos + new Vector3(offsetX, chestSpawnY, offsetZ);
             Instantiate(TreasureChestPrefab, chestPos, Quaternion.identity);
@@ -277,7 +327,8 @@ public class MazeGenerator3D : MonoBehaviour
 
         // 怪物的候选位置：所有未被宝箱占用的单元格
         HashSet<Cell> occupiedByChests = new HashSet<Cell>(chestCells);
-        List<Cell> monsterCandidates = spawnCandidates.Except(occupiedByChests).OrderBy(c => Random.value).ToList();
+        // 修正 1: 使用 UnityEngine.Random
+        List<Cell> monsterCandidates = spawnCandidates.Except(occupiedByChests).OrderBy(c => UnityEngine.Random.value).ToList();
 
         attempts = 0;
         maxAttemptsPerPlacement = 1000; // 增加尝试次数，以满足严格的间隔要求
@@ -285,7 +336,8 @@ public class MazeGenerator3D : MonoBehaviour
         while (monsterCells.Count < monstersToPlace && monsterCandidates.Count > 0 && attempts < maxAttemptsPerPlacement)
         {
             // 随机选择一个候选单元格
-            Cell candidate = monsterCandidates[Random.Range(0, monsterCandidates.Count)];
+            // 修正 2: 使用 UnityEngine.Random
+            Cell candidate = monsterCandidates[UnityEngine.Random.Range(0, monsterCandidates.Count)];
             monsterCandidates.Remove(candidate);
 
             // 使用 IsMonsterPlacementValid 检查双重距离要求
@@ -306,8 +358,9 @@ public class MazeGenerator3D : MonoBehaviour
         foreach (Cell cell in monsterCells)
         {
             Vector3 cellPos = GetCellPosition(cell.x, cell.y, cell.z);
-            float offsetX = Random.Range(-WallScale * 0.4f, WallScale * 0.4f);
-            float offsetZ = Random.Range(-WallScale * 0.4f, WallScale * 0.4f);
+            // 使用 UnityEngine.Random
+            float offsetX = UnityEngine.Random.Range(-WallScale * 0.4f, WallScale * 0.4f); // <-- 修改此处
+            float offsetZ = UnityEngine.Random.Range(-WallScale * 0.4f, WallScale * 0.4f); // <-- 修改此处
 
             Vector3 monsterPos = cellPos + new Vector3(offsetX, monsterSpawnY, offsetZ);
             Instantiate(MonsterPrefab, monsterPos, Quaternion.identity);
@@ -449,23 +502,66 @@ public class MazeGenerator3D : MonoBehaviour
         int dz = current.z - neighbour.z;
 
         // X轴 (Right/Left)
-        if (dx == 1)
+        if (dx == 1) // current is Right of neighbour (current.x > neighbour.x)
+        {
             Destroy(neighbour.walls[0]);
-        else if (dx == -1)
+
+            // 记录通道: current <-> neighbour
+            int current2DIndex = CoordinatesTo2DIndex(current.x, current.z);
+            int neighbour2DIndex = CoordinatesTo2DIndex(neighbour.x, neighbour.z);
+
+            // Current open to West (W)
+            mazeFlagsNativeArray[current2DIndex] |= MazeFlags.PassageW;
+            // Neighbour open to East (E)
+            mazeFlagsNativeArray[neighbour2DIndex] |= MazeFlags.PassageE;
+        }
+        else if (dx == -1) // current is Left of neighbour (current.x < neighbour.x)
+        {
             Destroy(current.walls[0]);
 
-        // Y轴 (Up/Down)
-        if (dy == 1)
-            Destroy(neighbour.walls[2]);
-        else if (dy == -1)
-            Destroy(current.walls[2]);
+            // 记录通道: current <-> neighbour
+            int current2DIndex = CoordinatesTo2DIndex(current.x, current.z);
+            int neighbour2DIndex = CoordinatesTo2DIndex(neighbour.x, neighbour.z);
+
+            // Current open to East (E)
+            mazeFlagsNativeArray[current2DIndex] |= MazeFlags.PassageE;
+            // Neighbour open to West (W)
+            mazeFlagsNativeArray[neighbour2DIndex] |= MazeFlags.PassageW;
+        }
+
+        // Y轴 (Up/Down) - 忽略 Y 轴的通道，专注于 2D 气味系统
 
         // Z轴 (Forward/Backward)
-        if (dz == 1)
+        if (dz == 1) // current is Forward of neighbour (current.z > neighbour.z)
+        {
             Destroy(neighbour.walls[4]);
-        else if (dz == -1)
+
+            // 记录通道: current <-> neighbour
+            int current2DIndex = CoordinatesTo2DIndex(current.x, current.z);
+            int neighbour2DIndex = CoordinatesTo2DIndex(neighbour.x, neighbour.z);
+
+            // Current open to South (S) - Backward
+            mazeFlagsNativeArray[current2DIndex] |= MazeFlags.PassageS;
+            // Neighbour open to North (N) - Forward
+            mazeFlagsNativeArray[neighbour2DIndex] |= MazeFlags.PassageN;
+        }
+        else if (dz == -1) // current is Backward of neighbour (current.z < neighbour.z)
+        {
             Destroy(current.walls[4]);
+
+            // 记录通道: current <-> neighbour
+            int current2DIndex = CoordinatesTo2DIndex(current.x, current.z);
+            int neighbour2DIndex = CoordinatesTo2DIndex(neighbour.x, neighbour.z);
+
+            // Current open to North (N) - Forward
+            mazeFlagsNativeArray[current2DIndex] |= MazeFlags.PassageN;
+            // Neighbour open to South (S) - Backward
+            mazeFlagsNativeArray[neighbour2DIndex] |= MazeFlags.PassageS;
+        }
     }
+
+
+
     private Cell GetUnvisitedNeighbour(Cell c)
     {
         List<Cell> neighbours = new List<Cell>();
@@ -480,7 +576,8 @@ public class MazeGenerator3D : MonoBehaviour
 
         if (neighbours.Count > 0)
         {
-            return neighbours[Random.Range(0, neighbours.Count)];
+            // 使用 UnityEngine.Random
+            return neighbours[UnityEngine.Random.Range(0, neighbours.Count)]; // <-- 修改此处
         }
         return null;
     }
