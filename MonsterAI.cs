@@ -3,19 +3,40 @@ using UnityEngine.AI;
 using System.Collections.Generic;
 using System.Collections;
 using System.Linq;
+using UnityEngine.UI; // 引入 UI 命名空间 (保留用于 Slider/Image)
 
 // 确保怪物上有 NavMeshAgent 和 PatrolAutoBind
 [RequireComponent(typeof(NavMeshAgent))]
 [RequireComponent(typeof(PatrolAutoBind))]
 public class MonsterAI : MonoBehaviour
 {
+    // ===============================================
+    // *** 集成 HealthSystem 的字段 (保留 UI 引用) ***
+    // ===============================================
+    [Header("Monster Health System")]
+    public Color fullHealthColor = Color.red;    // 满血颜色：红色
+    public Color lowHealthColor = Color.white;   // 空血颜色：白色
+    public int maxHitsToDie = 4; // 怪物最大承受伤害次数
+
+    private Slider healthSlider;
+    private Image fillImage;
+    private int currentHits;
+
+    // 动画 ID (假设您在 Animator Controller 中使用了 "IsDead" 参数)
+    private int _animIDIsDead;
+
+    public int CurrentHealth
+    {
+        get { return currentHits; }
+    }
+    // ===============================================
+
     [Header("AI Settings")]
     [Tooltip("怪物移动速度")]
     public float moveSpeed = 2.0f;
     [Tooltip("怪物能够发现玩家的范围(米)")]
     public float chaseRange = 4.0f;
 
-    // *** 移除巡逻逻辑变量 ***
     [HideInInspector] public int patrolSteps = 3;
     [HideInInspector] public LayerMask obstacleMask;
 
@@ -29,34 +50,39 @@ public class MonsterAI : MonoBehaviour
     private int animIDAttack;
     private int animIDMoveSpeed;
     private Animator monsterAnimator;
-    private HealthSystem monsterHealth; // 怪物自身的血量系统
-    private HealthSystem playerHealth;  // 用于直接攻击玩家
+    private HealthSystem playerHealth;   // 用于直接攻击玩家
+
+    // *** 玩家强制攻击判定参数 ***
+    [Header("Player Interaction")]
+    [Tooltip("玩家攻击的强制命中距离 (米)。用于绕过玩家动画事件的调试。")]
+    public float PlayerHitCheckRange = 1.0f;
 
     // *** 新增变量：用于代码强制赋值 Controller ***
     [Header("Animation Debug (Force Controller)")]
     [Tooltip("请将你的 Monster_AnimController 文件拖入此槽位，以防 Inspector 链接丢失。")]
     public RuntimeAnimatorController debugAnimatorController;
 
-    // *** 新增：攻击循环和后退设置 ***
+    // *** 攻击循环和后退设置 ***
     [Header("Attack Cycle")]
     [Tooltip("怪物连续攻击的最大次数")]
     public int maxAttackCount = 4;
     [Tooltip("怪物后退的距离")]
-    public float retreatDistance = 1.0f; // *** 修复：设置为 1.0f ***
+    public float retreatDistance = 1.0f;
     [Tooltip("怪物后退的速度")]
     public float retreatSpeed = 1.5f;
     [Tooltip("后退完成后，怪物停顿的时间 (秒)，避免立即攻击")]
-    public float retreatPauseTime = 0.5f; // 新增停顿时间
+    public float retreatPauseTime = 0.5f;
 
     private int attackCount = 0;
     private bool isRetreating = false;
     private Vector3 retreatTarget;
-    private float retreatCompleteTime = 0f; // 记录后退完成的时间
+    private float retreatCompleteTime = 0f;
 
-    // *** 新增：预警系统 ***
-    [Header("Warning System")]
-    [Tooltip("当怪物发现玩家时，显示的预警视觉效果对象 (例如感叹号)。")]
-    public GameObject WarningIndicator;
+    // *** 预警系统 (重新添加 GameObject 引用，只用于 SetActive) ***
+    [Header("Warning System (Simple Toggle)")]
+    [Tooltip("请拖入场景中的警告 Canvas 对象。AI只会控制其开关。")]
+    public GameObject WarningIndicator; // <--- 重新添加
+
     [Tooltip("预警持续时间 (秒)，之后怪物开始追逐。")]
     public float WarningDuration = 1.0f;
 
@@ -83,23 +109,47 @@ public class MonsterAI : MonoBehaviour
     {
         monsterAnimator = GetComponent<Animator>();
 
-        // 关键修复：在 Awake 中尝试强制赋值
         if (monsterAnimator != null && monsterAnimator.runtimeAnimatorController == null && debugAnimatorController != null)
         {
             monsterAnimator.runtimeAnimatorController = debugAnimatorController;
             Debug.Log("MonsterAI: 在 Awake 中强制赋值 Animator Controller，尝试修复运行时引用。");
         }
+
+        if (monsterAnimator != null)
+        {
+            _animIDIsDead = Animator.StringToHash("IsDead");
+        }
     }
 
     void Start()
     {
+        // *** 初始化生命值和 UI (血条 UI 查找) ***
+        currentHits = maxHitsToDie;
+
+        healthSlider = GetComponentInChildren<Slider>(true);
+        if (healthSlider != null && healthSlider.fillRect != null)
+        {
+            fillImage = healthSlider.fillRect.GetComponent<Image>();
+        }
+
+        if (healthSlider != null)
+        {
+            healthSlider.maxValue = 1f;
+            healthSlider.value = 1f;
+        }
+        if (fillImage != null)
+        {
+            fillImage.color = fullHealthColor;
+        }
+        // **********************************************
+
         // 获取依赖组件
         playerTransform = FindObjectOfType<LegacyThirdPersonController>()?.transform;
-        monsterHealth = GetComponent<HealthSystem>();
+
         agent = GetComponent<NavMeshAgent>();
         patrolScript = GetComponent<PatrolAutoBind>();
 
-        if (playerTransform == null || monsterAnimator == null || monsterHealth == null || agent == null || patrolScript == null)
+        if (playerTransform == null || monsterAnimator == null || agent == null || patrolScript == null)
         {
             Debug.LogError("MonsterAI: 缺少关键组件。AI逻辑已禁用。");
             enabled = false;
@@ -114,7 +164,6 @@ public class MonsterAI : MonoBehaviour
             return;
         }
 
-        // 移除致命错误禁用逻辑
         if (monsterAnimator.runtimeAnimatorController == null)
         {
             Debug.LogWarning("MonsterAI: 警告！Animator Controller 引用仍为空，动画将无法激活，但 AI 继续运行。");
@@ -122,18 +171,17 @@ public class MonsterAI : MonoBehaviour
 
         // 配置 NavMeshAgent
         agent.speed = moveSpeed;
-        agent.stoppingDistance = AttackDistance; // 追逐时在攻击距离停止
+        agent.stoppingDistance = AttackDistance;
 
-        // 修复后的 Animator ID 初始化
         animIDAttack = Animator.StringToHash("Attack");
         animIDMoveSpeed = Animator.StringToHash("Speed");
 
         patrolScript.enabled = true;
 
-        // 预警指示器初始状态
+        // 预警指示器初始状态：隐藏
         if (WarningIndicator != null)
         {
-            WarningIndicator.SetActive(false);
+            WarningIndicator.SetActive(false); // <--- 重新添加 SetActive(false)
         }
 
         transform.LookAt(new Vector3(playerTransform.position.x, transform.position.y, playerTransform.position.z));
@@ -144,30 +192,69 @@ public class MonsterAI : MonoBehaviour
         if (!aiActive || isDead || playerHealth.IsDead())
         {
             agent.isStopped = true;
+            if (WarningIndicator != null) WarningIndicator.SetActive(false); // 确保在AI禁用时关闭预警UI
             return;
         }
 
-        // 检查自身血量，处理死亡状态
-        if (monsterHealth.CurrentHealth <= 0 && !isDead)
+        if (CurrentHealth <= 0 && !isDead)
         {
-            HandleDeath();
+            Die();
             return;
         }
+
+        float distanceToPlayer = Vector3.Distance(transform.position, playerTransform.position);
+
 
         // ----------------------------------------
-        // *** 预警状态处理 (拦截所有移动和动画) ***
+        // *** 玩家强制攻击判定逻辑 (保持不变) ***
+        // ----------------------------------------
+
+        if (Input.GetKeyDown(KeyCode.Space) && !isDead && playerTransform != null && !playerHealth.IsDead())
+        {
+            if (distanceToPlayer <= PlayerHitCheckRange)
+            {
+                Vector3 playerForward = playerTransform.forward;
+                Vector3 directionFromPlayerToMonster = (transform.position - playerTransform.position);
+
+                playerForward.y = 0;
+                directionFromPlayerToMonster.y = 0;
+
+                float angle = Vector3.Angle(playerForward, directionFromPlayerToMonster);
+
+                if (angle <= 50f)
+                {
+                    TakeDamage(1);
+                    Debug.Log($"SUCCESS (AI Forced Check): Hit by Player Spacebar. Distance: {distanceToPlayer:F2}m. Angle: {angle:F1}°");
+                }
+            }
+        }
+        // ****************************************************
+
+        // ----------------------------------------
+        // *** 预警状态处理 (只控制开关和计时) ***
         if (isWarning)
         {
+            // 确保 UI 开启
+            if (WarningIndicator != null && !WarningIndicator.activeSelf)
+            {
+                WarningIndicator.SetActive(true); // <--- 确保开启
+                Debug.Log("MonsterAI: 预警 UI 激活。");
+            }
+
             if (Time.time >= warningEndTime)
             {
                 // 预警结束，开始追逐
                 isWarning = false;
-                if (WarningIndicator != null) WarningIndicator.SetActive(false);
+
+                // 确保预警指示器隐藏
+                if (WarningIndicator != null) WarningIndicator.SetActive(false); // <--- 确保关闭
 
                 // 切换到追逐状态
                 isChasing = true;
                 patrolScript.enabled = false;
                 Debug.Log("MonsterAI: 预警结束，开始追逐！");
+
+                return;
             }
             // 预警期间，怪物保持静止和Idle动画
             agent.isStopped = true;
@@ -176,27 +263,27 @@ public class MonsterAI : MonoBehaviour
         }
         // ----------------------------------------
 
-        float distanceToPlayer = Vector3.Distance(transform.position, playerTransform.position);
-
-        // 状态切换逻辑:
-        if (distanceToPlayer <= chaseRange && !isChasing) // 发现玩家，且未处于追逐状态
+        // *** 状态切换逻辑: 发现玩家，进入预警 ***
+        if (distanceToPlayer <= chaseRange && !isChasing)
         {
-            // 发现玩家，进入预警状态 (取代直接进入追逐)
+            // 发现玩家，进入预警状态
             isWarning = true;
             warningEndTime = Time.time + WarningDuration;
 
-            if (WarningIndicator != null) WarningIndicator.SetActive(true);
+            // UI 将在下一帧的 isWarning 循环中被 SetActive(true)
+
             agent.isStopped = true; // 预警期间停止移动
+            patrolScript.enabled = false; // 停止巡逻
 
             Debug.Log("MonsterAI: 发现玩家！进入预警状态。");
             return; // 预警期间停止其他 Update 逻辑
         }
 
+
         // ----------------------------------------
         // 追逐/巡逻逻辑
         // ----------------------------------------
 
-        // 只有当 Animator 可用时，才尝试同步动画
         bool isAnimatorReady = monsterAnimator != null && monsterAnimator.enabled && monsterAnimator.runtimeAnimatorController != null;
 
 
@@ -213,6 +300,86 @@ public class MonsterAI : MonoBehaviour
             if (isAnimatorReady) monsterAnimator.SetFloat(animIDMoveSpeed, speedValue);
         }
     }
+
+    // ===============================================
+    // *** 集成 HealthSystem 的方法 (保留 UI 更新逻辑) ***
+    // ===============================================
+
+    /// <summary>
+    /// 怪物受击接口，取代 HealthSystem.TakeDamage()。
+    /// </summary>
+    public void TakeDamage(int damageHits = 1)
+    {
+        if (isDead) return;
+
+        currentHits -= damageHits;
+        Debug.Log(gameObject.name + " 剩余生命值: " + currentHits);
+
+        UpdateHealthUI();
+
+        if (currentHits <= 0)
+        {
+            Die();
+        }
+        else
+        {
+            // TODO: 播放被击中反馈动画或音效
+        }
+    }
+
+    private void UpdateHealthUI()
+    {
+        float healthRatio = (float)currentHits / maxHitsToDie;
+
+        // 1. 更新 Slider 的值
+        if (healthSlider != null)
+        {
+            healthSlider.value = healthRatio;
+        }
+
+        // 2. 更新填充颜色：从白色平滑过渡到红色
+        if (fillImage != null)
+        {
+            fillImage.color = Color.Lerp(lowHealthColor, fullHealthColor, healthRatio);
+        }
+    }
+
+    /// <summary>
+    /// 怪物死亡逻辑，取代 HealthSystem.Die()。
+    /// </summary>
+    void Die()
+    {
+        if (isDead) return;
+        isDead = true;
+
+        if (monsterAnimator != null)
+        {
+            monsterAnimator.SetBool(_animIDIsDead, true);
+        }
+
+        // 死亡时，确保血条值和颜色最终为 0 和白色 (保留血条 UI 逻辑)
+        if (healthSlider != null)
+        {
+            healthSlider.value = 0f;
+        }
+        if (fillImage != null)
+        {
+            fillImage.color = lowHealthColor;
+        }
+
+        // 确保预警 UI 关闭
+        if (WarningIndicator != null) WarningIndicator.SetActive(false);
+
+        // 禁用碰撞体
+        Collider mainCollider = GetComponent<Collider>();
+        if (mainCollider != null) mainCollider.enabled = false;
+
+        HandleDeath();
+    }
+
+    // ===============================================
+    // *** MonsterAI 原始方法 (保持不变) ***
+    // ===============================================
 
     private void ChaseAndAttackPlayer(float distanceToPlayer)
     {
@@ -273,10 +440,18 @@ public class MonsterAI : MonoBehaviour
             {
                 attackCount = 0;
             }
+
+            // *** 核心修改：如果玩家跑出追逐范围，退出追逐状态 (原始逻辑) ***
+            if (distanceToPlayer > chaseRange)
+            {
+                isChasing = false;
+                patrolScript.enabled = true;
+                Debug.Log($"MonsterAI ({gameObject.name}): 玩家跑远，退出追逐状态。");
+            }
         }
     }
 
-    // *** 攻击循环逻辑方法 ***
+    // *** 攻击循环逻辑方法 (保持不变) ***
 
     private void StartRetreat()
     {
@@ -325,7 +500,7 @@ public class MonsterAI : MonoBehaviour
 
     private void AttackPlayer()
     {
-        if (playerHealth.IsDead()) return;
+        if (playerHealth == null || playerHealth.IsDead()) return;
 
         isAttacking = true;
 
@@ -367,16 +542,9 @@ public class MonsterAI : MonoBehaviour
 
     private void HandleDeath()
     {
-        isDead = true;
         aiActive = false;
 
         agent.isStopped = true;
-        agent.enabled = false;
-
-        if (GetComponent<Collider>() != null)
-        {
-            GetComponent<Collider>().enabled = false;
-        }
 
         if (monsterAnimator != null && monsterAnimator.runtimeAnimatorController != null)
         {
@@ -399,6 +567,10 @@ public class MonsterAI : MonoBehaviour
 
         Gizmos.color = Color.magenta;
         Gizmos.DrawWireSphere(transform.position, AttackDistance);
+
+        // 绘制玩家强制攻击检测范围
+        Gizmos.color = Color.cyan;
+        Gizmos.DrawWireSphere(playerTransform != null ? playerTransform.position : transform.position, PlayerHitCheckRange);
 
         if (isRetreating)
         {

@@ -27,10 +27,12 @@ public class LegacyThirdPersonController : MonoBehaviour
     // 攻击设置
     // ===============================================
     [Header("Combat Settings")]
-    [Tooltip("用于伤害判定的碰撞体（必须是 Is Trigger）")]
-    public Collider AttackCollider;
     [Tooltip("攻击伤害值")]
     public int AttackDamage = 1;
+
+    // *** 攻击范围设置 (2.0f 对应 1.0m 半径) ***
+    [Tooltip("玩家前方检测攻击的最大有效距离（米）。设置 2.0f 可实现 1.0m 半径的检测球。")]
+    public float AttackRange = 2.0f;
 
     // *** 核心修改：用于抵消动画位移 ***
     [Tooltip("攻击动画产生的向前位移距离。代码将向后移动此距离进行抵消。")]
@@ -42,6 +44,11 @@ public class LegacyThirdPersonController : MonoBehaviour
     // ----------------------------------------
     [Tooltip("攻击动画播放的最大允许时间 (秒)。如果超过此时间仍未解锁，则强制重置。")]
     public float AttackTimeoutDuration = 0.6f;
+
+    // --- 新增攻击音效字段 ---
+    [Header("Audio Settings")]
+    [Tooltip("按下空格键时播放的攻击音效文件。")]
+    public AudioClip AttackSound;
 
     // ----------------------------------------
     // 新增：速度调整和平滑参数
@@ -73,9 +80,6 @@ public class LegacyThirdPersonController : MonoBehaviour
     private bool _isAttacking = false; // 用于阻止重复启动协程
     private Coroutine _attackTimeoutCoroutine;
 
-    // *** 存储 AttackTrigger 组件的引用 ***
-    private AttackTrigger _attackTriggerScript;
-
     // 路径追踪变量
     private Vector3 _lastPosition;
 
@@ -83,6 +87,12 @@ public class LegacyThirdPersonController : MonoBehaviour
     private int _animIDSpeed;
     private int _animIDGrounded;
     private int _animIDAttack; // <-- Trigger ID
+
+    // *** 用于代码攻击逻辑的已击中列表和标签常量 ***
+    private HashSet<GameObject> _hitTargets = new HashSet<GameObject>();
+    private const string MonsterTag = "Agent";
+
+    // 假设 HealthSystem.cs 存在于项目中
 
     void Start()
     {
@@ -101,27 +111,6 @@ public class LegacyThirdPersonController : MonoBehaviour
 
         InitializePathTracker();
 
-        // 确保攻击碰撞体初始是禁用的
-        if (AttackCollider != null)
-        {
-            AttackCollider.enabled = false;
-
-            // *** 核心修复：获取 AttackTrigger 脚本的引用和同步伤害值 ***
-            _attackTriggerScript = AttackCollider.GetComponent<AttackTrigger>();
-            if (_attackTriggerScript != null)
-            {
-                _attackTriggerScript.damageAmount = AttackDamage;
-            }
-            else
-            {
-                Debug.LogError("AttackCollider 缺少 AttackTrigger 脚本。连击伤害判定将失败。");
-            }
-        }
-        else
-        {
-            Debug.LogError("AttackCollider 字段未赋值。请在 Inspector 中拖入伤害碰撞体。");
-        }
-
         Debug.Log($"初始移动速度 MoveSpeed: {MoveSpeed:F1} m/s");
     }
 
@@ -135,7 +124,7 @@ public class LegacyThirdPersonController : MonoBehaviour
     }
 
     // ---------------------------------------------------
-    // *** 修复：HandleSpeedAdjustment 方法定义 ***
+    // HandleSpeedAdjustment 方法定义
     // ---------------------------------------------------
     private void HandleSpeedAdjustment()
     {
@@ -160,7 +149,7 @@ public class LegacyThirdPersonController : MonoBehaviour
     }
 
     // ---------------------------------------------------
-    // *** 修复：InitializePathTracker 方法定义 ***
+    // InitializePathTracker 方法定义
     // ---------------------------------------------------
     private void InitializePathTracker()
     {
@@ -177,7 +166,7 @@ public class LegacyThirdPersonController : MonoBehaviour
     }
 
     // ---------------------------------------------------
-    // *** 修复：TrackPath 方法定义 ***
+    // TrackPath 方法定义
     // ---------------------------------------------------
     private void TrackPath()
     {
@@ -192,7 +181,7 @@ public class LegacyThirdPersonController : MonoBehaviour
     }
 
     // ---------------------------------------------------
-    // *** 修复：HandleInputRotation 方法定义 ***
+    // HandleInputRotation 方法定义
     // ---------------------------------------------------
     private void HandleInputRotation()
     {
@@ -222,12 +211,19 @@ public class LegacyThirdPersonController : MonoBehaviour
         // 允许每次按空格都发送 Trigger，实现连击打断
         if (Input.GetKeyDown(KeyCode.Space))
         {
+            // 1. 播放攻击音效
+            if (AttackSound != null)
+            {
+                // 使用 PlayClipAtPoint 在角色位置播放音效
+                AudioSource.PlayClipAtPoint(AttackSound, transform.position);
+            }
+
             if (_hasAnimator)
             {
-                // 1. 启动动画 (使用 Trigger)
+                // 2. 启动动画 (使用 Trigger)
                 _animator.SetTrigger(_animIDAttack);
 
-                // 2. 如果当前不在攻击状态，启动锁定和超时
+                // 3. 如果当前不在攻击状态，启动锁定和超时
                 if (!_isAttacking)
                 {
                     _isAttacking = true; // 锁定代码状态
@@ -288,7 +284,7 @@ public class LegacyThirdPersonController : MonoBehaviour
         float smoothTime;
 
         // ---------------------------------------------------
-        // *** 核心修复：攻击时强制停止所有水平位移 ***
+        // 核心修复：攻击时强制停止所有水平位移
         if (_isAttacking)
         {
             worldMoveDirection = Vector3.zero; // 无论输入如何，方向都为零
@@ -328,8 +324,6 @@ public class LegacyThirdPersonController : MonoBehaviour
             // 动画速度使用 InputMagnitude (在攻击时为 0)
             _animator.SetFloat(_animIDSpeed, inputMagnitude);
         }
-
-        // *** 删除了当前的 Debug.Log($"当前水平移动速度: {_currentSpeed:F2} m/s"); ***
     }
 
     // ---------------------------------------------------
@@ -338,16 +332,46 @@ public class LegacyThirdPersonController : MonoBehaviour
 
     private void StartAttackCheck()
     {
-        if (AttackCollider != null)
+        // 每次攻击开始，清空已击中列表
+        _hitTargets.Clear();
+
+        // 1. 定义检测球体的位置和大小
+        // 球体中心位于角色前方 AttackRange / 2 的位置 (即 1.0m)
+        Vector3 checkCenter = transform.position + transform.forward * (AttackRange / 2f);
+        // 半径为 AttackRange / 2 (即 1.0m)
+        float checkRadius = AttackRange / 2f;
+
+        // 
+
+        // 2. 使用 Physics.OverlapSphere 检测碰撞体
+        Collider[] hitColliders = Physics.OverlapSphere(checkCenter, checkRadius);
+
+        foreach (Collider hit in hitColliders)
         {
-            // *** 核心修复：每次攻击开始时，重置伤害脚本状态 ***
-            if (_attackTriggerScript != null)
+            // 获取目标根对象（HealthSystem 所在的最高层级）
+            GameObject targetRoot = hit.transform.root.gameObject;
+
+            // 忽略攻击发起者自己、已击中目标、墙体、地面
+            if (targetRoot == gameObject || _hitTargets.Contains(targetRoot) || targetRoot.CompareTag("Wall") || targetRoot.CompareTag("Ground"))
             {
-                // 调用 AttackTrigger 中的新方法，清空已击中列表
-                _attackTriggerScript.ResetHitTargets();
+                continue;
             }
 
-            AttackCollider.enabled = true; // 开启碰撞体，开始伤害判定
+            // *** 核心修改：检查是否击中了带有 HealthSystem 且标签为 MonsterTag ("Agent") 的目标 ***
+            if (targetRoot.CompareTag(MonsterTag))
+            {
+                // *** 核心修改：直接寻找 HealthSystem 组件并应用伤害 ***
+                // 假设 HealthSystem 是在根对象上
+                HealthSystem targetHealth = targetRoot.GetComponent<HealthSystem>();
+
+                if (targetHealth != null)
+                {
+                    // 直接调用 HealthSystem 造成伤害
+                    targetHealth.TakeDamage(AttackDamage);
+                    _hitTargets.Add(targetRoot); // 标记为已击中，防止重复伤害
+                    Debug.Log($"SUCCESS: Player caused {AttackDamage} damage to {targetRoot.name} directly.");
+                }
+            }
         }
     }
 
@@ -362,15 +386,8 @@ public class LegacyThirdPersonController : MonoBehaviour
             Debug.Log("EndAttackCheck() 被调用！解除锁定。");
         }
 
-        if (AttackCollider != null)
-        {
-            AttackCollider.enabled = false;
-        }
-
         // 1. 解除代码锁定
         _isAttacking = false;
-
-        // 2. Trigger 会被 Animator 自动重置，此处无需 SetBool/SetTrigger。
     }
 
     // ---------------------------------------------------
@@ -380,5 +397,21 @@ public class LegacyThirdPersonController : MonoBehaviour
     private void OnFootstep(AnimationEvent animationEvent)
     {
         // 实现脚步声播放逻辑...
+    }
+
+    // ---------------------------------------------------
+    // Debug 辅助
+    // ---------------------------------------------------
+    void OnDrawGizmos()
+    {
+        if (_isAttacking)
+        {
+            // 绘制攻击检测区域的球体 Gizmo
+            Gizmos.color = Color.red;
+            // 球体中心位于角色前方 AttackRange / 2
+            Vector3 checkCenter = transform.position + transform.forward * (AttackRange / 2f);
+            float checkRadius = AttackRange / 2f;
+            Gizmos.DrawWireSphere(checkCenter, checkRadius);
+        }
     }
 }

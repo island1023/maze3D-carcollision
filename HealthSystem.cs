@@ -105,7 +105,7 @@ public class HealthSystem : MonoBehaviour
         // 触发死亡动画参数
         if (animator != null)
         {
-            // 假设 MonsterAI 负责播放死亡动画，这里只设置状态
+            // 假设死亡动画使用 IsDead 参数
             animator.SetBool(_animIDIsDead, true);
         }
 
@@ -119,13 +119,25 @@ public class HealthSystem : MonoBehaviour
             fillImage.color = lowHealthColor;
         }
 
-        // 禁用碰撞体和移动，防止角色继续互动 (只禁用Collider，不销毁)
-        // 销毁逻辑由 MonsterAI.cs 中的 HandleDeath/DestroyAfterDelay 负责
+        // 禁用碰撞体和移动，防止角色继续互动
         Collider mainCollider = GetComponent<Collider>();
         if (mainCollider != null) mainCollider.enabled = false;
 
-        // *** 修改点 3: 移除自动销毁逻辑 ***
-        // Destroy(gameObject, 5f); 
+        // ----------------------------------------------------------------------
+        // *** 关键添加点：调用 UIManager 显示玩家死亡界面 ***
+        // ----------------------------------------------------------------------
+        if (UIManager.Instance != null)
+        {
+            // 调用 ShowDeathUI() 来显示带有 "Restart" 和 "Exit" 按钮的 Canvas
+            UIManager.Instance.ShowDeathUI();
+        }
+        else
+        {
+            Debug.LogError("玩家死亡：UIManager 实例未找到，无法显示死亡UI！请确保 UIManager 脚本已挂载并初始化。");
+        }
+
+        // *** 移除自动销毁逻辑 (保持不变) ***
+        // Destroy(gameObject, 5f);  
     }
 
     public bool IsDead()
