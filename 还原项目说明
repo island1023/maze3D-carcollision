@@ -1,0 +1,21 @@
+根据你现有的文件（构建包 + C# 源码），情况是这样的：
+
+**可以恢复的内容：**
+- ✅ **C# 源码** — 你已经有了，直接用
+- ✅ **场景结构、Prefab 层级、贴图、模型、材质** — 用 **[AssetStudio](https://github.com/Perfare/AssetStudio)** 打开 `final_Data/` 目录下的 `level0`/`level1` 和 `sharedassets*.assets`，可以提取场景中的 GameObject 层级、组件绑定、贴图、网格等资源
+- ✅ **动画片段（Animation Clip）** — 可以导出 `.anim` 文件
+
+**需要手动重建的内容：**
+- ❌ **Animator Controller（动画状态机）** — 提取出来也是二进制格式，无法直接导入 Unity 编辑，你**必须重新连接状态机**（参数、状态转换、绑定Clip）
+- ❌ **UI 布局细节、Prefab 引用关系** — AssetStudio 导出为 `.prefab` 后，与 Unity 工程中的 `.prefab` 格式不完全兼容，需要手动修复引用
+
+**建议的恢复流程：**
+
+1. **用 AssetStudio** 打开 `final_Data/`，把所有 Scene/Prefab/Animation/Texture 导出为 Unity 格式
+2. **新建 Unity 工程**，把 C# 源码导入
+3. **手动重建 Animator Controller**（将导出的 `.anim` 拖入状态机，重新连线）
+4. 对照 AssetStudio 导出的场景层级，手动关联组件
+
+动画状态机是**最繁琐的部分**，必须重新设置状态转换和参数，但动画Clip本身是能保住的。
+
+动画状态机在PPT有部分展示
