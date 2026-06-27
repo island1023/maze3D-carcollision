@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<materialx version="1.39" fileprefix="./">
+  <open_pbr_surface type="surfaceshader" ypos="-1.879310" name="Scratches003_1K_JPG_OpenPbrSurface" xpos="6.159420">
+    <input type="color3" name="base_color" nodename="Scratches003_1K_JPG_Color" />
+    <input type="vector3" name="geometry_normal" nodename="NormalMap" />
+    <input type="float" name="geometry_opacity" nodename="Scratches003_1K_JPG_Opacity" />
+  </open_pbr_surface>
+  <surfacematerial type="material" ypos="0.000000" name="Scratches003_1K_JPG" xpos="8.695652">
+    <input type="surfaceshader" name="surfaceshader" nodename="Scratches003_1K_JPG_OpenPbrSurface" />
+  </surfacematerial>
+  <tiledimage type="color3" ypos="-3.103448" name="Scratches003_1K_JPG_Color" xpos="3.623188">
+    <input type="filename" name="file" colorspace="srgb_texture" value="Scratches003_1K-JPG_Color.jpg" />
+    <input type="vector2" name="uvtiling" value="1.0, 1.0" />
+  </tiledimage>
+  <tiledimage type="vector3" ypos="0.879310" name="Scratches003_1K_JPG_NormalGL" xpos="1.086957">
+    <input type="filename" name="file" value="Scratches003_1K-JPG_NormalGL.jpg" />
+    <input type="vector2" name="uvtiling" value="1.0, 1.0" />
+  </tiledimage>
+  <normalmap type="vector3" ypos="3.586207" name="NormalMap" xpos="3.623188">
+    <input type="vector3" name="in" nodename="Scratches003_1K_JPG_NormalGL" />
+    <input type="float" name="scale" value="1.0" />
+  </normalmap>
+  <tiledimage type="float" ypos="2.250000" name="Scratches003_1K_JPG_Opacity" xpos="3.623188">
+    <input type="filename" name="file" value="Scratches003_1K-JPG_Opacity.jpg" />
+    <input type="vector2" name="uvtiling" value="1.0, 1.0" />
+  </tiledimage>
+</materialx>
